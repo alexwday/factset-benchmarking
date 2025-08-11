@@ -19,8 +19,16 @@ import warnings
 
 import pandas as pd
 import fds.sdk.FactSetFundamentals
-from fds.sdk.FactSetFundamentals.api import data_items_api, fact_set_fundamentals_api
+from fds.sdk.FactSetFundamentals.api import metrics_api, fact_set_fundamentals_api
 from fds.sdk.FactSetFundamentals.models import *
+from fds.sdk.FactSetFundamentals.model.ids_batch_max30000 import IdsBatchMax30000
+from fds.sdk.FactSetFundamentals.model.metrics import Metrics
+from fds.sdk.FactSetFundamentals.model.periodicity import Periodicity
+from fds.sdk.FactSetFundamentals.model.update_type import UpdateType
+from fds.sdk.FactSetFundamentals.model.fiscal_period import FiscalPeriod
+from fds.sdk.FactSetFundamentals.model.batch import Batch
+from fds.sdk.FactSetFundamentals.model.fundamental_request_body import FundamentalRequestBody
+from fds.sdk.FactSetFundamentals.model.fundamentals_request import FundamentalsRequest
 from dotenv import load_dotenv
 
 # Suppress warnings
@@ -120,7 +128,7 @@ def get_all_available_metrics(api_client) -> Dict[str, List[Dict[str, Any]]]:
     """Fetch all available metrics from the API grouped by category."""
     logger.info("🔍 Fetching all available metrics from FactSet Fundamentals API...")
     
-    data_api = data_items_api.DataItemsApi(api_client)
+    data_api = metrics_api.MetricsApi(api_client)
     
     # Categories to fetch metrics for
     categories = [
@@ -207,21 +215,28 @@ def check_metric_availability_for_rbc(
             batch = metric_codes[i:i+10]
             
             try:
-                # Create request
-                request = FundamentalsRequest(
-                    data=FundamentalRequestBody(
-                        ids=IdsBatchMax30000([ticker]),
-                        metrics=Metrics(batch),
-                        periodicity=Periodicity("QTR"),
-                        fiscal_period=FiscalPeriod(
-                            start=start_date.strftime('%Y-%m-%d'),
-                            end=end_date.strftime('%Y-%m-%d')
-                        ),
-                        currency="CAD",
-                        update_type=UpdateType("RP"),
-                        batch=Batch("N")
-                    )
+                # Create request using the proper model classes
+                ids_instance = IdsBatchMax30000([ticker])
+                metrics_instance = Metrics(batch)
+                periodicity_instance = Periodicity("QTR")
+                update_type_instance = UpdateType("RP")
+                fiscal_period_instance = FiscalPeriod(
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
                 )
+                batch_instance = Batch("N")
+                
+                request_data = FundamentalRequestBody(
+                    ids=ids_instance,
+                    metrics=metrics_instance,
+                    periodicity=periodicity_instance,
+                    fiscal_period=fiscal_period_instance,
+                    currency="CAD",
+                    update_type=update_type_instance,
+                    batch=batch_instance
+                )
+                
+                request = FundamentalsRequest(data=request_data)
                 
                 # Make API call
                 response_wrapper = fund_api.get_fds_fundamentals_for_list(request)
