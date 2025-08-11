@@ -14,8 +14,8 @@ from typing import Dict, Any, Optional, List
 import yaml
 from dotenv import load_dotenv
 import fds.sdk.FactSetFundamentals
-from fds.sdk.FactSetFundamentals.api import company_reports_api, data_items_api, factset_fundamentals_api
-from fds.sdk.FactSetFundamentals.models import *
+from fds.sdk.FactSetFundamentals.api import fundamentals_api
+from fds.sdk.FactSetFundamentals.models import fundamentals_request, fundamentals_response
 
 # Load environment variables
 load_dotenv()
@@ -167,7 +167,7 @@ def get_fundamentals_metrics(api_instance, tickers: List[str]) -> pd.DataFrame:
         ]
         
         # Create request
-        request = FundamentalsRequest(
+        request = fundamentals_request.FundamentalsRequest(
             ids=tickers,
             metrics=metrics,
             periodicity="QTR",  # Quarterly data
@@ -221,7 +221,7 @@ def get_company_snapshot(api_instance, ticker: str) -> Dict[str, Any]:
             "FF_EXCHANGE",     # Exchange
         ]
         
-        request = FundamentalsRequest(
+        request = fundamentals_request.FundamentalsRequest(
             ids=[ticker],
             metrics=snapshot_metrics
         )
@@ -272,7 +272,7 @@ def get_financial_statements(api_instance, ticker: str) -> pd.DataFrame:
             "FF_FIN_CF"        # Financing Cash Flow
         ]
         
-        request = FundamentalsRequest(
+        request = fundamentals_request.FundamentalsRequest(
             ids=[ticker],
             metrics=statement_metrics,
             periodicity="ANN",  # Annual data
@@ -352,7 +352,7 @@ def get_banks_fundamentals(api_instance, config: Dict[str, Any]) -> pd.DataFrame
         
         bank_tickers = [b['ticker'] for b in banks]
         
-        request = FundamentalsRequest(
+        request = fundamentals_request.FundamentalsRequest(
             ids=bank_tickers,
             metrics=bank_metrics,
             periodicity="QTR",
@@ -424,7 +424,7 @@ def get_ratios_and_multiples(api_instance, ticker: str) -> pd.DataFrame:
             "FF_INT_COV"        # Interest Coverage
         ]
         
-        request = FundamentalsRequest(
+        request = fundamentals_request.FundamentalsRequest(
             ids=[ticker],
             metrics=ratio_metrics,
             periodicity="QTR",
@@ -496,7 +496,7 @@ def main():
         
         # Create API client and instance
         with fds.sdk.FactSetFundamentals.ApiClient(api_configuration) as api_client:
-            api_instance = factset_fundamentals_api.FactsetFundamentalsApi(api_client)
+            api_instance = fundamentals_api.FundamentalsApi(api_client)
             
             # Example companies to analyze
             sample_tickers = ["AAPL-US", "MSFT-US", "GOOGL-US"]

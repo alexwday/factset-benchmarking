@@ -1,7 +1,0 @@
-fds.sdk.FactSetFundamentals
-fds.sdk.utils
-python-dotenv
-pandas
-numpy
-openpyxl
-tqdm
