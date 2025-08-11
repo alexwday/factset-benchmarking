@@ -19,6 +19,12 @@ certs/
 *.pem
 *.crt
 
+# Input folder - keep README but ignore sensitive files
+input/*.cer
+input/*.pem
+input/*.crt
+input/*.key
+
 # Output files
 output/
 *.log
