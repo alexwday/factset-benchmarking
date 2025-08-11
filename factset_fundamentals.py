@@ -8,10 +8,12 @@ import os
 import json
 import sys
 import logging
+import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import time
 from pathlib import Path
+import urllib.parse
 
 # Setup logging
 logging.basicConfig(
@@ -101,11 +103,46 @@ class FactSetFundamentalsClient:
         self.api_client = None
         self.fundamentals_api = None
         self.metrics_api = None
+        self.ssl_cert_path = None
         self._setup_authentication()
+        
+    def _setup_ssl_certificate(self):
+        """Setup SSL certificate from file or environment"""
+        try:
+            # Check for SSL certificate path in environment
+            ssl_cert_path = os.getenv('SSL_CERT_PATH')
+            
+            if ssl_cert_path and os.path.exists(ssl_cert_path):
+                # Read certificate file
+                with open(ssl_cert_path, 'rb') as cert_file:
+                    cert_data = cert_file.read()
+                    
+                # Create temporary certificate file
+                temp_cert = tempfile.NamedTemporaryFile(mode='wb', suffix='.cer', delete=False)
+                temp_cert.write(cert_data)
+                temp_cert.close()
+                
+                # Set environment variables for SSL
+                os.environ['REQUESTS_CA_BUNDLE'] = temp_cert.name
+                os.environ['SSL_CERT_FILE'] = temp_cert.name
+                
+                logger.info(f"SSL certificate configured from: {ssl_cert_path}")
+                return temp_cert.name
+            else:
+                # If no custom certificate, return None (will use system defaults)
+                logger.info("No custom SSL certificate configured, using system defaults")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Error setting up SSL certificate: {e}")
+            return None
         
     def _setup_authentication(self):
         """Setup API authentication and create API instances"""
         try:
+            # Setup SSL certificate first
+            self.ssl_cert_path = self._setup_ssl_certificate()
+            
             # Get credentials from environment
             username = os.getenv('API_USERNAME')
             password = os.getenv('API_PASSWORD')
@@ -120,10 +157,12 @@ class FactSetFundamentalsClient:
                 password=password
             )
             
-            # Setup proxy if configured
-            proxy_url = os.getenv('PROXY_URL')
-            if proxy_url and os.getenv('USE_PROXY', 'false').lower() == 'true':
-                self._configure_proxy(proxy_url)
+            # Add SSL certificate if available
+            if self.ssl_cert_path:
+                self.configuration.ssl_ca_cert = self.ssl_cert_path
+            
+            # Setup proxy configuration
+            self._configure_proxy()
             
             # Create API client and instances
             self.api_client = ff.ApiClient(self.configuration)
@@ -135,25 +174,41 @@ class FactSetFundamentalsClient:
             
         except Exception as e:
             logger.error(f"Failed to setup authentication: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
-    def _configure_proxy(self, proxy_url):
+    def _configure_proxy(self):
         """Configure proxy settings"""
         try:
-            import urllib.parse
+            proxy_url = os.getenv('PROXY_URL')
+            
+            # Only configure proxy if PROXY_URL is set
+            if not proxy_url:
+                logger.info("No proxy configured")
+                return
+            
+            # Check if proxy should be used
+            use_proxy = os.getenv('USE_PROXY', 'true').lower() == 'true'
+            if not use_proxy:
+                logger.info("Proxy disabled via USE_PROXY=false")
+                return
+            
             proxy_user = os.getenv('PROXY_USER')
             proxy_password = os.getenv('PROXY_PASSWORD')
             
             if proxy_user and proxy_password:
                 proxy_domain = os.getenv('PROXY_DOMAIN', 'MAPLE')
+                # Format: http://DOMAIN\\user:pass@proxy:port
                 escaped_user = urllib.parse.quote(f"{proxy_domain}\\{proxy_user}")
                 escaped_pass = urllib.parse.quote(proxy_password)
-                self.configuration.proxy = f"http://{escaped_user}:{escaped_pass}@{proxy_url}"
-                logger.info(f"Proxy configured: {proxy_url}")
+                full_proxy_url = f"http://{escaped_user}:{escaped_pass}@{proxy_url}"
             else:
-                self.configuration.proxy = f"http://{proxy_url}"
-                logger.info(f"Proxy configured without auth: {proxy_url}")
-                
+                full_proxy_url = f"http://{proxy_url}"
+            
+            self.configuration.proxy = full_proxy_url
+            logger.info(f"Proxy configured: {proxy_url}")
+            
         except Exception as e:
             logger.warning(f"Failed to configure proxy: {e}")
     
@@ -183,6 +238,8 @@ class FactSetFundamentalsClient:
                 
         except Exception as e:
             logger.error(f"Failed to get metrics: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def get_fundamentals(self, tickers, metrics=None, fiscal_period=None, periodicity=None):
@@ -315,13 +372,18 @@ class FactSetFundamentalsClient:
             
             # Try different ticker formats
             ticker_formats = [
-                ticker,           # Plain ticker
-                f"{ticker}-US",   # US format
-                f"{ticker}-USA",  # USA format
-                f"{ticker}-CA",   # Canada format
-                f"{ticker}-NYSE", # NYSE format
-                f"{ticker}-TSE",  # Toronto format
+                ticker,           # Already formatted ticker from config
             ]
+            
+            # If ticker doesn't have a suffix, try common ones
+            if '-' not in ticker:
+                ticker_formats.extend([
+                    f"{ticker}-US",   # US format
+                    f"{ticker}-USA",  # USA format
+                    f"{ticker}-CA",   # Canada format
+                    f"{ticker}-NYSE", # NYSE format
+                    f"{ticker}-TSE",  # Toronto format
+                ])
             
             success = False
             for test_ticker in ticker_formats:
@@ -406,6 +468,15 @@ class FactSetFundamentalsClient:
                 logger.info(f"  {metric}: {count}/{successful} banks ({coverage:.1f}%)")
         
         return all_results
+    
+    def __del__(self):
+        """Cleanup temporary SSL certificate on exit"""
+        if hasattr(self, 'ssl_cert_path') and self.ssl_cert_path:
+            try:
+                os.unlink(self.ssl_cert_path)
+                logger.info("Temporary SSL certificate cleaned up")
+            except:
+                pass
 
 
 def main():
@@ -413,6 +484,14 @@ def main():
     logger.info("="*60)
     logger.info("FactSet Fundamentals Analysis Tool")
     logger.info("="*60)
+    
+    # Show current configuration
+    logger.info("\nConfiguration:")
+    logger.info(f"  API_USERNAME: {'Set' if os.getenv('API_USERNAME') else 'Not set'}")
+    logger.info(f"  API_PASSWORD: {'Set' if os.getenv('API_PASSWORD') else 'Not set'}")
+    logger.info(f"  PROXY_URL: {os.getenv('PROXY_URL', 'Not set')}")
+    logger.info(f"  USE_PROXY: {os.getenv('USE_PROXY', 'true')}")
+    logger.info(f"  SSL_CERT_PATH: {os.getenv('SSL_CERT_PATH', 'Not set')}")
     
     # Create client
     client = FactSetFundamentalsClient()

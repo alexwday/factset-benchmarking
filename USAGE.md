@@ -38,12 +38,15 @@ Create a `.env` file in the project root with your FactSet credentials:
 API_USERNAME=your_username
 API_PASSWORD=your_password
 
-# Optional proxy settings (if behind corporate firewall)
+# SSL Certificate (optional - for custom corporate certificates)
+SSL_CERT_PATH=/path/to/certificate.cer
+
+# Proxy settings (required if behind corporate firewall)
 PROXY_URL=proxy.company.com:8080
 PROXY_USER=your_proxy_user
 PROXY_PASSWORD=your_proxy_password
 PROXY_DOMAIN=DOMAIN
-USE_PROXY=false  # Set to true to enable proxy
+USE_PROXY=true  # Set to false to disable proxy
 ```
 
 ### 2. Virtual Environment
