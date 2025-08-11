@@ -59,6 +59,20 @@ except ImportError:
 class FundamentalsMatrixBuilder:
     """Builds availability matrix for FactSet Fundamentals data"""
     
+    # Valid categories from API documentation
+    VALID_CATEGORIES = [
+        'INCOME_STATEMENT',
+        'BALANCE_SHEET', 
+        'CASH_FLOW',
+        'RATIOS',
+        'FINANCIAL_SERVICES',
+        'INDUSTRY_METRICS',
+        'PENSION_AND_POSTRETIREMENT',
+        'MARKET_DATA',
+        'MISCELLANEOUS',
+        'DATES'
+    ]
+    
     def __init__(self):
         """Initialize the matrix builder"""
         self.configuration = None
@@ -133,6 +147,8 @@ class FundamentalsMatrixBuilder:
             
         except Exception as e:
             logger.error(f"Failed to setup authentication: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _configure_proxy(self):
@@ -166,32 +182,86 @@ class FundamentalsMatrixBuilder:
         except Exception as e:
             logger.warning(f"Failed to configure proxy: {e}")
     
+    def test_apple_ticker(self):
+        """Test with Apple ticker to verify API connection works"""
+        logger.info("\n" + "="*60)
+        logger.info("Testing API Connection with Apple (AAPL-US)")
+        logger.info("="*60)
+        
+        test_metrics = ['FF_SALES', 'FF_NET_INC', 'FF_EPS']
+        
+        try:
+            # Create request
+            ids = IdsBatchMax30000(['AAPL-US'])
+            metrics_obj = Metrics(test_metrics)
+            
+            request_body = FundamentalRequestBody(
+                ids=ids,
+                metrics=metrics_obj
+            )
+            
+            request = FundamentalsRequest(data=request_body)
+            
+            # Make API call
+            response = self.fundamentals_api.get_fds_fundamentals_for_list(request)
+            
+            if response and hasattr(response, 'data') and response.data:
+                logger.info(f"✅ SUCCESS! Apple test passed. Got {len(response.data)} data points:")
+                for item in response.data[:3]:  # Show first 3 items
+                    metric = getattr(item, 'metric', 'N/A')
+                    value = getattr(item, 'value', 'N/A')
+                    date = getattr(item, 'date', 'N/A')
+                    logger.info(f"  - {metric}: {value} (as of {date})")
+                return True
+            else:
+                logger.error("❌ FAILED! No data returned for Apple (AAPL-US)")
+                logger.error("This suggests an authentication or API access issue.")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ FAILED! Error testing Apple ticker: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def get_all_available_metrics(self):
         """Get ALL available metrics from the API across all categories"""
-        logger.info("Fetching all available metrics from FactSet API...")
-        
-        # Categories to check (passing None gets all categories)
-        categories = [
-            None,  # Get all metrics
-            'INCOME_STATEMENT',
-            'BALANCE_SHEET',
-            'CASH_FLOW',
-            'RATIOS',
-            'SUPPLEMENTAL'
-        ]
+        logger.info("\n" + "="*60)
+        logger.info("Fetching All Available Metrics from FactSet API")
+        logger.info("="*60)
         
         all_metrics = {}
         
-        for category in categories:
+        # First, get all metrics without category filter
+        try:
+            logger.info("Fetching ALL metrics (no category filter)...")
+            response = self.metrics_api.get_fds_fundamentals_metrics()
+            
+            if response and response.data:
+                for metric in response.data:
+                    metric_code = getattr(metric, 'metric', None)
+                    if metric_code:
+                        all_metrics[metric_code] = {
+                            'code': metric_code,
+                            'name': getattr(metric, 'name', 'N/A'),
+                            'category': getattr(metric, 'category', 'N/A'),
+                            'subcategory': getattr(metric, 'subcategory', 'N/A'),
+                            'oa_page_id': getattr(metric, 'oa_page_id', 'N/A'),
+                        }
+                logger.info(f"  Found {len(response.data)} total metrics")
+        except Exception as e:
+            logger.error(f"Error fetching all metrics: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Then get metrics by each valid category for additional detail
+        for category in self.VALID_CATEGORIES:
             try:
-                cat_name = category or 'ALL'
-                logger.info(f"  Fetching metrics for category: {cat_name}")
-                
-                response = self.metrics_api.get_fds_fundamentals_metrics(
-                    category=category if category else None
-                )
+                logger.info(f"Fetching metrics for category: {category}")
+                response = self.metrics_api.get_fds_fundamentals_metrics(category=category)
                 
                 if response and response.data:
+                    count = 0
                     for metric in response.data:
                         metric_code = getattr(metric, 'metric', None)
                         if metric_code and metric_code not in all_metrics:
@@ -200,30 +270,41 @@ class FundamentalsMatrixBuilder:
                                 'name': getattr(metric, 'name', 'N/A'),
                                 'category': getattr(metric, 'category', 'N/A'),
                                 'subcategory': getattr(metric, 'subcategory', 'N/A'),
-                                'factor': getattr(metric, 'factor', 'N/A'),
+                                'oa_page_id': getattr(metric, 'oa_page_id', 'N/A'),
                             }
-                    
-                    logger.info(f"    Found {len(response.data)} metrics in {cat_name}")
-                
+                            count += 1
+                    logger.info(f"  Found {len(response.data)} metrics ({count} new)")
             except Exception as e:
-                logger.warning(f"  Failed to get metrics for category {category}: {e}")
+                logger.error(f"Error fetching metrics for category {category}: {e}")
+                # Don't stop, continue with other categories
         
         self.all_metrics = all_metrics
-        logger.info(f"Total unique metrics discovered: {len(all_metrics)}")
+        logger.info(f"\nTotal unique metrics discovered: {len(all_metrics)}")
+        
+        # Show breakdown by category
+        category_counts = {}
+        for metric_info in all_metrics.values():
+            cat = metric_info['category']
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+        
+        logger.info("\nMetrics by category:")
+        for cat, count in sorted(category_counts.items()):
+            logger.info(f"  {cat}: {count} metrics")
         
         # Save metrics list for reference
         with open('all_metrics.json', 'w') as f:
             json.dump(all_metrics, f, indent=2)
-        logger.info("Saved complete metrics list to all_metrics.json")
+        logger.info("\nSaved complete metrics list to all_metrics.json")
         
         return all_metrics
     
-    def test_metrics_for_ticker(self, ticker: str, metric_codes: List[str], batch_size: int = 50):
+    def test_metrics_for_ticker(self, ticker: str, metric_codes: List[str], batch_size: int = 30):
         """
         Test which metrics are available for a specific ticker
         Process in batches to avoid request size limits
         """
         available_metrics = set()
+        errors = []
         
         # Process metrics in batches
         for i in range(0, len(metric_codes), batch_size):
@@ -252,8 +333,16 @@ class FundamentalsMatrixBuilder:
                             available_metrics.add(metric)
                 
             except Exception as e:
-                # Some metrics might not be valid, continue with next batch
-                logger.debug(f"    Batch {i//batch_size + 1} failed: {str(e)[:100]}")
+                error_msg = str(e)
+                errors.append(f"Batch {i//batch_size + 1}: {error_msg[:100]}")
+                # Log the full error for debugging
+                logger.debug(f"Full error for batch {i//batch_size + 1}: {error_msg}")
+        
+        # If we had errors, log them
+        if errors and not available_metrics:
+            logger.warning(f"  Errors encountered for {ticker}:")
+            for error in errors[:3]:  # Show first 3 errors
+                logger.warning(f"    - {error}")
         
         return available_metrics
     
@@ -263,37 +352,50 @@ class FundamentalsMatrixBuilder:
         logger.info("Building Availability Matrix")
         logger.info("="*60)
         
-        # Step 1: Get all metrics
+        # Step 1: Test Apple first
+        if not self.test_apple_ticker():
+            logger.error("Apple test failed. Please check your API credentials and connection.")
+            return None
+        
+        # Step 2: Get all metrics
         if not self.all_metrics:
             self.get_all_available_metrics()
         
-        metric_codes = list(self.all_metrics.keys())
-        logger.info(f"Testing {len(metric_codes)} metrics across all banks...")
+        if not self.all_metrics:
+            logger.error("No metrics found. Cannot proceed.")
+            return None
         
-        # Step 2: Import bank configuration
+        metric_codes = list(self.all_metrics.keys())
+        logger.info(f"\nTesting {len(metric_codes)} metrics across all banks...")
+        
+        # Step 3: Import bank configuration
         try:
             from config.banks_config import monitored_institutions
         except ImportError:
             logger.error("Could not import banks config")
             return None
         
-        # Step 3: Test each bank
+        # Step 4: Test each bank
         results = {}
         total_banks = len(monitored_institutions)
         
         for idx, (ticker, info) in enumerate(monitored_institutions.items(), 1):
             logger.info(f"\n[{idx}/{total_banks}] Testing {info['name']} ({ticker})...")
             
-            # Test different ticker formats if needed
+            # The ticker in config should already have the correct format (e.g., JPM-US)
+            # But we'll also try without suffix if it fails
             test_tickers = [ticker]
-            if '-' not in ticker:
-                test_tickers.extend([f"{ticker}-US", f"{ticker}-NYSE"])
+            
+            # If ticker has a suffix, also try without it
+            if '-' in ticker:
+                base_ticker = ticker.split('-')[0]
+                test_tickers.append(base_ticker)
             
             bank_metrics = set()
             working_ticker = None
             
             for test_ticker in test_tickers:
-                logger.info(f"  Trying ticker format: {test_ticker}")
+                logger.info(f"  Trying ticker: {test_ticker}")
                 available = self.test_metrics_for_ticker(test_ticker, metric_codes)
                 
                 if available:
@@ -301,6 +403,8 @@ class FundamentalsMatrixBuilder:
                     working_ticker = test_ticker
                     logger.info(f"  ✅ Found {len(available)} metrics with ticker: {test_ticker}")
                     break
+                else:
+                    logger.debug(f"  No data with ticker: {test_ticker}")
             
             if working_ticker:
                 results[ticker] = {
@@ -311,11 +415,12 @@ class FundamentalsMatrixBuilder:
                     'metric_count': len(bank_metrics)
                 }
             else:
-                logger.warning(f"  ❌ No data found for {ticker}")
+                logger.warning(f"  ❌ No data found for any ticker format tried")
                 results[ticker] = {
                     'name': info['name'],
                     'type': info['type'],
                     'error': 'No valid ticker format found',
+                    'tested_tickers': test_tickers,
                     'available_metrics': [],
                     'metric_count': 0
                 }
@@ -327,7 +432,24 @@ class FundamentalsMatrixBuilder:
         
         # Save raw results
         with open('availability_matrix_raw.json', 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(results, f, indent=2, default=str)
+        
+        logger.info("\n" + "="*60)
+        logger.info("Matrix Build Complete")
+        logger.info("="*60)
+        
+        # Show summary
+        successful = sum(1 for r in results.values() if r['metric_count'] > 0)
+        failed = total_banks - successful
+        
+        logger.info(f"Successfully retrieved data for {successful}/{total_banks} banks")
+        logger.info(f"Failed to retrieve data for {failed} banks")
+        
+        if failed > 0:
+            logger.info("\nFailed banks:")
+            for ticker, data in results.items():
+                if data['metric_count'] == 0:
+                    logger.info(f"  - {data['name']} ({ticker}): Tested {data.get('tested_tickers', [ticker])}")
         
         return results
     
@@ -341,19 +463,26 @@ class FundamentalsMatrixBuilder:
         logger.info("Analyzing Availability Matrix")
         logger.info("="*60)
         
+        # Filter to only successful banks
+        successful_banks = {k: v for k, v in self.availability_matrix.items() 
+                          if v.get('metric_count', 0) > 0}
+        
+        if not successful_banks:
+            logger.error("No successful banks to analyze")
+            return
+        
         # Create DataFrame for analysis
         matrix_data = []
         
-        for ticker, data in self.availability_matrix.items():
-            if 'available_metrics' in data:
-                for metric in data['available_metrics']:
-                    matrix_data.append({
-                        'ticker': ticker,
-                        'name': data['name'],
-                        'type': data['type'],
-                        'metric': metric,
-                        'available': 1
-                    })
+        for ticker, data in successful_banks.items():
+            for metric in data['available_metrics']:
+                matrix_data.append({
+                    'ticker': ticker,
+                    'name': data['name'],
+                    'type': data['type'],
+                    'metric': metric,
+                    'available': 1
+                })
         
         if not matrix_data:
             logger.error("No data to analyze")
@@ -371,21 +500,22 @@ class FundamentalsMatrixBuilder:
         
         # Save full matrix to CSV
         pivot.to_csv('availability_matrix_full.csv')
-        logger.info(f"Saved full matrix to availability_matrix_full.csv ({pivot.shape[0]} banks x {pivot.shape[1]} metrics)")
+        logger.info(f"Saved full matrix to availability_matrix_full.csv")
+        logger.info(f"Matrix dimensions: {pivot.shape[0]} banks × {pivot.shape[1]} metrics")
         
         # Analyze metric coverage
         metric_coverage = pivot.sum(axis=0).sort_values(ascending=False)
+        total_banks = len(successful_banks)
         
         # Find metrics available for all banks
-        total_banks = len(self.availability_matrix)
         universal_metrics = metric_coverage[metric_coverage == total_banks]
         
-        logger.info(f"\nMetrics available for ALL {total_banks} banks: {len(universal_metrics)}")
+        logger.info(f"\nMetrics available for ALL {total_banks} successful banks: {len(universal_metrics)}")
         if len(universal_metrics) > 0:
-            logger.info("Universal metrics:")
-            for metric in universal_metrics.index[:20]:  # Show first 20
+            logger.info("\nTop universal metrics:")
+            for i, metric in enumerate(universal_metrics.index[:20], 1):
                 if metric in self.all_metrics:
-                    logger.info(f"  - {metric}: {self.all_metrics[metric]['name']}")
+                    logger.info(f"  {i}. {metric}: {self.all_metrics[metric]['name']}")
         
         # Find metrics available for most banks (>80%)
         threshold = int(total_banks * 0.8)
@@ -401,26 +531,48 @@ class FundamentalsMatrixBuilder:
             avg_metrics = df[df['type'] == bank_type].groupby('ticker')['metric'].count().mean()
             logger.info(f"  {bank_type}: {type_count} banks, avg {avg_metrics:.0f} metrics per bank")
         
+        # Find best covered banks
+        bank_coverage = pivot.sum(axis=1).sort_values(ascending=False)
+        logger.info("\nTop 10 banks by metric coverage:")
+        for i, (ticker, count) in enumerate(bank_coverage.head(10).items(), 1):
+            bank_name = self.availability_matrix[ticker]['name']
+            logger.info(f"  {i}. {bank_name} ({ticker}): {int(count)} metrics")
+        
         # Save summary report
         summary = {
-            'total_banks': total_banks,
+            'total_banks_tested': len(self.availability_matrix),
+            'successful_banks': total_banks,
+            'failed_banks': len(self.availability_matrix) - total_banks,
             'total_metrics_in_api': len(self.all_metrics),
             'total_metrics_found': len(metric_coverage),
+            'universal_metrics_count': len(universal_metrics),
             'universal_metrics': list(universal_metrics.index),
-            'common_metrics_80pct': list(common_metrics.index),
+            'common_metrics_80pct_count': len(common_metrics),
+            'common_metrics_80pct': list(common_metrics.index[:50]),  # Top 50
             'coverage_by_type': df.groupby('type')['ticker'].nunique().to_dict(),
             'top_metrics': {
                 metric: {
                     'name': self.all_metrics.get(metric, {}).get('name', 'Unknown'),
+                    'category': self.all_metrics.get(metric, {}).get('category', 'Unknown'),
                     'coverage': int(count),
                     'percentage': f"{(count/total_banks)*100:.1f}%"
                 }
-                for metric, count in metric_coverage.head(50).items()
-            }
+                for metric, count in metric_coverage.head(100).items()
+            },
+            'failed_banks': [
+                {
+                    'ticker': ticker,
+                    'name': data['name'],
+                    'type': data['type'],
+                    'tested_formats': data.get('tested_tickers', [ticker])
+                }
+                for ticker, data in self.availability_matrix.items()
+                if data.get('metric_count', 0) == 0
+            ]
         }
         
         with open('availability_matrix_summary.json', 'w') as f:
-            json.dump(summary, f, indent=2)
+            json.dump(summary, f, indent=2, default=str)
         
         logger.info("\nSaved analysis results to:")
         logger.info("  - availability_matrix_raw.json (raw data)")
@@ -428,107 +580,6 @@ class FundamentalsMatrixBuilder:
         logger.info("  - availability_matrix_summary.json (summary statistics)")
         
         return summary
-    
-    def generate_report(self):
-        """Generate a comprehensive HTML report"""
-        if not self.availability_matrix:
-            logger.error("No data to report")
-            return
-        
-        logger.info("\nGenerating HTML report...")
-        
-        # Create simple HTML report
-        html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>FactSet Fundamentals Availability Matrix</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { color: #333; }
-        h2 { color: #666; margin-top: 30px; }
-        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .success { color: green; }
-        .error { color: red; }
-        .metric-available { background-color: #90EE90; }
-        .metric-missing { background-color: #FFB6C1; }
-    </style>
-</head>
-<body>
-    <h1>FactSet Fundamentals Availability Matrix Report</h1>
-    <p>Generated: {timestamp}</p>
-    
-    <h2>Summary</h2>
-    <ul>
-        <li>Total Banks Analyzed: {total_banks}</li>
-        <li>Total Metrics in API: {total_metrics}</li>
-        <li>Successfully Connected Banks: {successful_banks}</li>
-        <li>Failed Banks: {failed_banks}</li>
-    </ul>
-    
-    <h2>Bank Coverage</h2>
-    <table>
-        <tr>
-            <th>Bank</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Metrics Available</th>
-            <th>Working Ticker</th>
-        </tr>
-        {bank_rows}
-    </table>
-    
-    <h2>Top Universal Metrics</h2>
-    <p>Metrics available for all successfully connected banks:</p>
-    <ul>
-        {universal_metrics}
-    </ul>
-</body>
-</html>
-        """
-        
-        # Generate bank rows
-        bank_rows = []
-        successful = 0
-        for ticker, data in self.availability_matrix.items():
-            if data.get('metric_count', 0) > 0:
-                successful += 1
-                status_class = 'success'
-                status = '✅ Connected'
-            else:
-                status_class = 'error'
-                status = '❌ Failed'
-            
-            bank_rows.append(f"""
-        <tr>
-            <td>{data['name']}</td>
-            <td>{data['type']}</td>
-            <td class="{status_class}">{status}</td>
-            <td>{data.get('metric_count', 0)}</td>
-            <td>{data.get('working_ticker', 'N/A')}</td>
-        </tr>""")
-        
-        # Get universal metrics
-        universal_list = []
-        # This would need the analysis results
-        
-        # Fill in template
-        html_filled = html.format(
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            total_banks=len(self.availability_matrix),
-            total_metrics=len(self.all_metrics),
-            successful_banks=successful,
-            failed_banks=len(self.availability_matrix) - successful,
-            bank_rows=''.join(bank_rows),
-            universal_metrics='<li>Run analyze_matrix() to get universal metrics</li>'
-        )
-        
-        with open('availability_matrix_report.html', 'w') as f:
-            f.write(html_filled)
-        
-        logger.info("Saved HTML report to availability_matrix_report.html")
     
     def __del__(self):
         """Cleanup temporary SSL certificate on exit"""
@@ -559,25 +610,24 @@ def main():
     
     # Build the matrix
     logger.info("\nStarting matrix build process...")
-    builder.build_availability_matrix()
+    matrix = builder.build_availability_matrix()
     
-    # Analyze results
-    logger.info("\nAnalyzing results...")
-    summary = builder.analyze_matrix()
-    
-    # Generate report
-    builder.generate_report()
-    
-    logger.info("\n" + "="*60)
-    logger.info("Matrix build complete!")
-    logger.info("="*60)
-    logger.info("\nOutput files generated:")
-    logger.info("  1. all_metrics.json - Complete list of all API metrics")
-    logger.info("  2. availability_matrix_raw.json - Raw availability data")
-    logger.info("  3. availability_matrix_full.csv - Full matrix (banks x metrics)")
-    logger.info("  4. availability_matrix_summary.json - Summary statistics")
-    logger.info("  5. availability_matrix_report.html - HTML report")
-    logger.info("  6. fundamentals_matrix.log - Detailed execution log")
+    if matrix:
+        # Analyze results
+        logger.info("\nAnalyzing results...")
+        summary = builder.analyze_matrix()
+        
+        logger.info("\n" + "="*60)
+        logger.info("Process Complete!")
+        logger.info("="*60)
+        logger.info("\nOutput files generated:")
+        logger.info("  1. all_metrics.json - Complete list of all API metrics")
+        logger.info("  2. availability_matrix_raw.json - Raw availability data")
+        logger.info("  3. availability_matrix_full.csv - Full matrix (banks × metrics)")
+        logger.info("  4. availability_matrix_summary.json - Summary statistics")
+        logger.info("  5. fundamentals_matrix.log - Detailed execution log")
+    else:
+        logger.error("\nMatrix build failed. Please check the log for errors.")
 
 
 if __name__ == "__main__":
