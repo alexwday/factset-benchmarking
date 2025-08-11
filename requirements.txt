@@ -1,12 +1,23 @@
+# Core FactSet SDK
 fds.sdk.FactSetFundamentals==3.0.0
 fds.sdk.utils==2.1.2
+
+# Environment and configuration
 python-dotenv==1.0.0
-pandas==2.0.3
-numpy==1.24.3
-openpyxl==3.1.2
-requests==2.31.0
-urllib3==2.0.7
-certifi==2023.7.22
-pysmb==1.2.9.1
-pyyaml==6.0.1
-tqdm==4.65.0
+
+# Data processing and analysis
+pandas>=2.0.0,<3.0.0
+numpy>=1.24.0,<2.0.0
+openpyxl>=3.1.0  # For Excel file generation
+
+# Progress bars
+tqdm>=4.65.0
+
+# The following are included as dependencies of the SDK but specified for clarity:
+# requests - HTTP library (comes with SDK)
+# urllib3 - HTTP client (comes with SDK)
+# certifi - SSL certificates (comes with SDK)
+
+# Optional - only needed if using NAS/SMB features from example files:
+# pysmb==1.2.9.1
+# pyyaml==6.0.1
