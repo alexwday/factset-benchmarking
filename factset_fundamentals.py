@@ -60,22 +60,22 @@ except ImportError:
 class FactSetFundamentalsClient:
     """Client for interacting with FactSet Fundamentals API"""
     
-    # Key financial metrics for analysis
+    # Key financial metrics for analysis (using only validated metrics)
     DEFAULT_METRICS = [
         'FF_SALES',          # Revenue
         'FF_NET_INC',        # Net Income
-        'FF_EPS_BASIC',      # Basic Earnings per Share
+        'FF_EPS',            # Earnings per Share (changed from FF_EPS_BASIC)
         'FF_ASSETS',         # Total Assets
-        'FF_LIAB',           # Total Liabilities
+        'FF_LIAB_TOT',       # Total Liabilities (changed from FF_LIAB)
         'FF_EQUITY',         # Total Equity
         'FF_OPER_INC',       # Operating Income
         'FF_EBIT',           # EBIT
         'FF_EBITDA',         # EBITDA
-        'FF_CASH',           # Cash and Cash Equivalents
-        'FF_DIV_PER_SHR',    # Dividends per Share
-        'FF_BK_VAL_PER_SHR', # Book Value per Share
-        'FF_OPER_CASH_FLOW', # Operating Cash Flow
-        'FF_FREE_CASH_FLOW', # Free Cash Flow
+        'FF_CASH_ST',        # Cash and Short Term Investments (changed from FF_CASH)
+        'FF_DIV',            # Dividends (changed from FF_DIV_PER_SHR)
+        'FF_BOOK_VAL',       # Book Value (changed from FF_BK_VAL_PER_SHR)
+        'FF_OPER_CF',        # Operating Cash Flow (changed from FF_OPER_CASH_FLOW)
+        'FF_FREE_CF',        # Free Cash Flow (changed from FF_FREE_CASH_FLOW)
     ]
     
     # Bank-specific metrics
