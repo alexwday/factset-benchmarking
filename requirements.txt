@@ -1,5 +1,5 @@
-fds.sdk.FactSetFundamentals==2.0.12
-fds.sdk.utils==1.3.0
+fds.sdk.FactSetFundamentals==3.0.0
+fds.sdk.utils==2.1.2
 python-dotenv==1.0.0
 pandas==2.0.3
 numpy==1.24.3
