@@ -231,7 +231,7 @@ def check_metric_availability_for_rbc(
                     metrics=metrics_instance,
                     periodicity=periodicity_instance,
                     fiscal_period=fiscal_period_instance,
-                    currency="USD",  # Standardized to USD
+                    currency="CAD",  # Standardized to CAD
                     update_type=update_type_instance,
                     batch=batch_instance
                 )

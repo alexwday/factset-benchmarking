@@ -248,7 +248,7 @@ def get_metric_value_for_bank(
             metrics=metrics_instance,
             periodicity=periodicity_instance,
             fiscal_period=fiscal_period_instance,
-            currency="USD",  # Standardize to USD for comparison
+            currency="CAD",  # Standardize to CAD for comparison
             update_type=update_type_instance,
             batch=batch_instance
         )
